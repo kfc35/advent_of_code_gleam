@@ -1,6 +1,7 @@
 import gleam/int
 import gleam/list
-import gleam/regexp
+
+// import gleam/regexp
 import gleam/string
 
 pub fn pt_1(input: String) {
@@ -47,9 +48,21 @@ fn sum_invalid_ids_in_range_accum(
   }
 }
 
+// 
+// fn get_invalid_id_summand_pt1_regexp(current_id: Int) {
+//   let assert Ok(pattern) = regexp.from_string("^([0-9]+)\\1$")
+//   case regexp.check(pattern, int.to_string(current_id)) {
+//     True -> current_id
+//     False -> 0
+//   }
+// }
+
 fn get_invalid_id_summand_pt1(current_id: Int) {
-  let assert Ok(pattern) = regexp.from_string("^([0-9]+)\\1$")
-  case regexp.check(pattern, int.to_string(current_id)) {
+  let number = int.to_string(current_id)
+  let halfway = string.length(number) / 2
+  let first_half = string.slice(number, 0, halfway)
+  let second_half = string.slice(number, halfway, halfway)
+  case string.length(number) % 2 == 0 && first_half == second_half {
     True -> current_id
     False -> 0
   }
@@ -62,10 +75,40 @@ pub fn pt_2(input: String) {
   })
 }
 
+// import gleam/regexp to use this code (gleam add gleam_regexp)
+// fn get_invalid_id_summand_pt2_regexp(current_id: Int) {
+//   let assert Ok(pattern) = regexp.from_string("^([0-9]+)\\1+$")
+//   case regexp.check(pattern, int.to_string(current_id)) {
+//     True -> current_id
+//     False -> 0
+//   }
+// }
+
 fn get_invalid_id_summand_pt2(current_id: Int) {
-  let assert Ok(pattern) = regexp.from_string("^([0-9]+)\\1+$")
-  case regexp.check(pattern, int.to_string(current_id)) {
-    True -> current_id
-    False -> 0
+  get_invalid_id_summand_pt2_loop(current_id, 1)
+}
+
+fn get_invalid_id_summand_pt2_loop(current_id: Int, substring_size: Int) {
+  let number = int.to_string(current_id)
+  case string.length(number) % substring_size == 0 {
+    True -> {
+      case string.length(number) / substring_size > 1 {
+        True -> {
+          let num_substrings = string.length(number) / substring_size
+          let splits =
+            list.map(list.range(0, num_substrings - 1), fn(index) {
+              string.slice(number, index * substring_size, substring_size)
+            })
+          let assert [head, ..] = splits as "list guaranteed to have head"
+          case list.all(splits, fn(split) { head == split }) {
+            True -> current_id
+            False ->
+              get_invalid_id_summand_pt2_loop(current_id, substring_size + 1)
+          }
+        }
+        False -> 0
+      }
+    }
+    False -> get_invalid_id_summand_pt2_loop(current_id, substring_size + 1)
   }
 }
