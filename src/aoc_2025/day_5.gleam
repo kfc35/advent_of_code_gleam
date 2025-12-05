@@ -9,13 +9,7 @@ pub fn pt_1(input: String) {
     use interval <- list.any(intervals)
     id_in_fresh_interval(id, interval)
   }
-  |> list.map(fn(bool) {
-    case bool {
-      True -> 1
-      False -> 0
-    }
-  })
-  |> list.reduce(int.add)
+  |> list.count(fn(bool) { bool })
 }
 
 type InputData {
