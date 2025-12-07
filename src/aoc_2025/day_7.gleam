@@ -1,5 +1,6 @@
 import gleam/int
 import gleam/list
+import gleam/result
 import gleam/string
 
 pub fn pt_1(input: String) {
@@ -10,7 +11,7 @@ pub fn pt_1(input: String) {
   updated_rows
   |> list.map(fn(row_state) {
     list.map(row_state.splitters, fn(splitter) {
-      case splitter.used {
+      case splitter.used_times > 0 {
         True -> 1
         False -> 0
       }
@@ -18,14 +19,19 @@ pub fn pt_1(input: String) {
   })
   |> list.flatten
   |> list.reduce(int.add)
+  |> result.unwrap(0)
 }
 
 type Beam {
-  Beam(col: Int)
+  Beam(col: Int, num_instances: Int)
+}
+
+fn beam_compare(a: Beam, b: Beam) {
+  int.compare(a.col, b.col)
 }
 
 type Splitter {
-  Splitter(col: Int, used: Bool)
+  Splitter(col: Int, used_times: Int)
 }
 
 type RowState {
@@ -60,43 +66,63 @@ fn parse_initial_row_state(row: List(#(Int, String)), row_state: RowState) {
 
 fn parse_element(element: #(Int, String), row_state: RowState) {
   case element {
-    #(col, "S") -> RowState([Beam(col), ..row_state.beams], row_state.splitters)
+    #(col, "S") ->
+      RowState([Beam(col, 1), ..row_state.beams], row_state.splitters)
     #(col, "^") ->
-      RowState(row_state.beams, [Splitter(col, False), ..row_state.splitters])
+      RowState(row_state.beams, [Splitter(col, 0), ..row_state.splitters])
     _ -> row_state
   }
 }
 
 fn update_current_row(current: RowState, previous: RowState) {
-  let previous_beam_cols = list.map(previous.beams, fn(beam) { beam.col })
   let updated_splitters =
     list.map(current.splitters, fn(splitter) {
-      case list.contains(previous_beam_cols, splitter.col) {
-        True -> Splitter(splitter.col, True)
-        False -> Splitter(splitter.col, False)
+      case list.find(previous.beams, fn(beam) { beam.col == splitter.col }) {
+        Ok(beam) ->
+          Splitter(splitter.col, splitter.used_times + beam.num_instances)
+        Error(_) -> Splitter(splitter.col, splitter.used_times)
       }
     })
+    |> list.reverse()
   let splitters_used =
-    list.filter(updated_splitters, fn(splitter) { splitter.used })
+    list.filter(updated_splitters, fn(splitter) { splitter.used_times > 0 })
 
   let continuing_beams =
-    previous_beam_cols
-    |> list.filter(fn(col) {
+    previous.beams
+    |> list.filter(fn(beam) {
       !list.contains(
         list.map(splitters_used, fn(splitter) { splitter.col }),
-        col,
+        beam.col,
       )
     })
-    |> list.map(fn(col) { Beam(col) })
   let new_beams =
     list.map(splitters_used, fn(splitter) {
       [splitter.col - 1, splitter.col + 1]
     })
     |> list.flatten
-    |> list.unique
-    |> list.map(fn(col) { Beam(col) })
+    |> list.map(fn(col) { Beam(col, 1) })
+  let coalesce_beams =
+    list.append(continuing_beams, new_beams)
+    |> list.sort(beam_compare)
+    |> list.fold([], fn(accum: List(Beam), beam) {
+      case accum {
+        [] -> [beam]
+        [head, ..rest] -> {
+          case head.col == beam.col {
+            True -> [
+              Beam(head.col, head.num_instances + beam.num_instances),
+              ..rest
+            ]
+            False -> [beam, head, ..rest]
+          }
+        }
+      }
+    })
+    |> list.reverse
+  echo coalesce_beams
+  echo updated_splitters
 
-  RowState(list.append(continuing_beams, new_beams), updated_splitters)
+  RowState(coalesce_beams, updated_splitters)
 }
 
 fn fire_beam(state: RoomState) {
@@ -125,5 +151,8 @@ fn fire_beam_loop(rows: List(RowState), updated_rows_reversed: List(RowState)) {
 }
 
 pub fn pt_2(input: String) {
-  todo as "part 2 not implemented"
+  // let room_state = parse_input(input)
+  // let RoomState(updated_rows) = fire_beam(room_state)
+
+  todo
 }
