@@ -97,10 +97,12 @@ fn update_current_row(current: RowState, previous: RowState) {
     })
   let new_beams =
     list.map(splitters_used, fn(splitter) {
-      [splitter.col - 1, splitter.col + 1]
+      [
+        Beam(splitter.col - 1, splitter.used_times),
+        Beam(splitter.col + 1, splitter.used_times),
+      ]
     })
     |> list.flatten
-    |> list.map(fn(col) { Beam(col, 1) })
   let coalesce_beams =
     list.append(continuing_beams, new_beams)
     |> list.sort(beam_compare)
@@ -119,8 +121,6 @@ fn update_current_row(current: RowState, previous: RowState) {
       }
     })
     |> list.reverse
-  echo coalesce_beams
-  echo updated_splitters
 
   RowState(coalesce_beams, updated_splitters)
 }
@@ -151,8 +151,14 @@ fn fire_beam_loop(rows: List(RowState), updated_rows_reversed: List(RowState)) {
 }
 
 pub fn pt_2(input: String) {
-  // let room_state = parse_input(input)
-  // let RoomState(updated_rows) = fire_beam(room_state)
+  let room_state = parse_input(input)
+  let RoomState(updated_rows) = fire_beam(room_state)
 
-  todo
+  case list.reverse(updated_rows) {
+    [last_row, ..] ->
+      list.map(last_row.beams, fn(beam) { beam.num_instances })
+      |> list.reduce(int.add)
+      |> result.unwrap(0)
+    [] -> panic as "malformed input: rows must not be empty"
+  }
 }
