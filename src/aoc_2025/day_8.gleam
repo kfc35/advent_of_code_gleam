@@ -9,7 +9,7 @@ import gleam/string
 pub fn pt_1(input: String) {
   let junction_boxes = parse_input(input)
 
-  let shortest_lights = find_n_shortest_lights(junction_boxes, 1000)
+  let shortest_lights = find_n_shortest_lights(junction_boxes, 10)
   let circuits = create_circuits(shortest_lights)
 
   circuits
@@ -220,5 +220,59 @@ fn create_circuits_loop(
 }
 
 pub fn pt_2(input: String) {
-  todo as "part 2 not implemented"
+  let junction_boxes = parse_input(input)
+  let junction_boxes_length = list.length(junction_boxes)
+  let n = 1000
+  let shortest_lights = find_n_shortest_lights(junction_boxes, n)
+  let circuits = create_circuits(shortest_lights)
+  let last_light = case circuits {
+    [biggest_circuit, ..] ->
+      find_last_light_for_complete_circuit_loop(
+        junction_boxes,
+        junction_boxes_length,
+        n,
+        shortest_lights,
+        biggest_circuit,
+      )
+    _ -> panic as "there should be at least one circuit"
+  }
+
+  last_light.a.x * last_light.b.x
+}
+
+/// This is not optimized at all!
+fn find_last_light_for_complete_circuit_loop(
+  junction_boxes: List(JunctionBox),
+  junction_boxes_length: Int,
+  n: Int,
+  shortest_lights: List(Light),
+  biggest_circuit: set.Set(JunctionBox),
+) {
+  let biggest_circuit_size = set.size(biggest_circuit)
+
+  case
+    biggest_circuit_size == junction_boxes_length,
+    list.reverse(shortest_lights)
+  {
+    True, [last_shortest_light, ..] -> {
+      echo list.reverse(shortest_lights)
+      echo n
+      last_shortest_light
+    }
+    _, _ -> {
+      let new_shortest_lights = find_n_shortest_lights(junction_boxes, n + 1)
+      let new_circuits = create_circuits(new_shortest_lights)
+      case new_circuits {
+        [new_biggest_circuit, ..] ->
+          find_last_light_for_complete_circuit_loop(
+            junction_boxes,
+            junction_boxes_length,
+            n + 1,
+            new_shortest_lights,
+            new_biggest_circuit,
+          )
+        _ -> panic as "there should be at least one circuit"
+      }
+    }
+  }
 }
