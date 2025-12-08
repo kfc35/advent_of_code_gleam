@@ -2,6 +2,7 @@ import gleam/dict
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/result
 import gleam/set
 import gleam/string
@@ -9,13 +10,15 @@ import gleam/string
 pub fn pt_1(input: String) {
   let junction_boxes = parse_input(input)
 
-  let shortest_lights = find_n_shortest_lights(junction_boxes, 10)
+  let shortest_lights = find_n_shortest_lights(junction_boxes, 1000, 0)
   let circuits = create_circuits(shortest_lights)
 
   circuits
   |> list.map(set.size)
   |> list.take(3)
   |> list.reduce(int.multiply)
+  // should not be empty
+  |> result.unwrap(0)
 }
 
 // Types & Utils //
@@ -73,13 +76,14 @@ fn distance(a: JunctionBox, b: JunctionBox) {
 
 // Finding n-Shortest Lights //
 
-fn find_n_shortest_lights(boxes: List(JunctionBox), n: Int) {
-  find_n_shortest_lights_loop(boxes, n, [])
+fn find_n_shortest_lights(boxes: List(JunctionBox), n: Int, page: Int) {
+  find_n_shortest_lights_loop(boxes, n, page, [])
 }
 
 fn find_n_shortest_lights_loop(
   boxes: List(JunctionBox),
   n: Int,
+  page: Int,
   lights: List(Light),
 ) {
   case boxes {
@@ -87,9 +91,10 @@ fn find_n_shortest_lights_loop(
       find_n_shortest_lights_loop(
         rest,
         n,
-        recalc_shortest_lights(head, rest, n, lights),
+        page,
+        recalc_shortest_lights(head, rest, n * { page + 1 }, lights),
       )
-    [] -> lights
+    [] -> lights |> list.drop(n * page)
   }
 }
 
@@ -141,6 +146,11 @@ fn is_being_processed(
   result.unwrap(dict.get(jbs_processing_dict, jb), False)
 }
 
+// compares size descending
+fn compare_circuits_size_desc(a: set.Set(JunctionBox), b: set.Set(JunctionBox)) {
+  int.compare(set.size(b), set.size(a))
+}
+
 fn create_circuits_loop(
   jbs_to_process: List(JunctionBox),
   jbs_processing_dict: dict.Dict(JunctionBox, Bool),
@@ -151,7 +161,7 @@ fn create_circuits_loop(
   case lights_to_process {
     [] ->
       [current_circuit, ..all_circuits]
-      |> list.sort(fn(a, b) { int.compare(set.size(b), set.size(a)) })
+      |> list.sort(compare_circuits_size_desc)
     [first_light, ..other_lights] -> {
       case jbs_to_process {
         [jb, ..other_jbs_to_process] -> {
@@ -222,57 +232,144 @@ fn create_circuits_loop(
 pub fn pt_2(input: String) {
   let junction_boxes = parse_input(input)
   let junction_boxes_length = list.length(junction_boxes)
-  let n = 1000
-  let shortest_lights = find_n_shortest_lights(junction_boxes, n)
-  let circuits = create_circuits(shortest_lights)
-  let last_light = case circuits {
-    [biggest_circuit, ..] ->
-      find_last_light_for_complete_circuit_loop(
-        junction_boxes,
-        junction_boxes_length,
-        n,
-        shortest_lights,
-        biggest_circuit,
-      )
-    _ -> panic as "there should be at least one circuit"
-  }
+  let last_light =
+    get_final_light_for_complete_circuit(
+      junction_boxes,
+      junction_boxes_length,
+      1000,
+      0,
+      [],
+    )
 
   last_light.a.x * last_light.b.x
 }
 
-/// This is not optimized at all!
-fn find_last_light_for_complete_circuit_loop(
+fn get_final_light_for_complete_circuit(
   junction_boxes: List(JunctionBox),
   junction_boxes_length: Int,
-  n: Int,
-  shortest_lights: List(Light),
-  biggest_circuit: set.Set(JunctionBox),
+  step_size: Int,
+  iteration: Int,
+  circuits: List(set.Set(JunctionBox)),
 ) {
-  let biggest_circuit_size = set.size(biggest_circuit)
+  let shortest_lights =
+    find_n_shortest_lights(junction_boxes, step_size, iteration)
+  let #(circuits, maybe_final_light) =
+    update_circuits(circuits, shortest_lights, junction_boxes_length)
 
-  case
-    biggest_circuit_size == junction_boxes_length,
-    list.reverse(shortest_lights)
-  {
-    True, [last_shortest_light, ..] -> {
-      echo list.reverse(shortest_lights)
-      echo n
-      last_shortest_light
-    }
-    _, _ -> {
-      let new_shortest_lights = find_n_shortest_lights(junction_boxes, n + 1)
-      let new_circuits = create_circuits(new_shortest_lights)
-      case new_circuits {
-        [new_biggest_circuit, ..] ->
-          find_last_light_for_complete_circuit_loop(
-            junction_boxes,
+  case maybe_final_light {
+    option.Some(light) -> light
+    option.None ->
+      get_final_light_for_complete_circuit(
+        junction_boxes,
+        junction_boxes_length,
+        step_size,
+        iteration + 1,
+        circuits,
+      )
+  }
+}
+
+fn update_circuits(
+  circuits: List(set.Set(JunctionBox)),
+  new_lights: List(Light),
+  junction_boxes_length: Int,
+) {
+  case new_lights {
+    [Light(a, b, dist), ..rest] -> {
+      let circuits_to_add_to =
+        circuits
+        |> list.filter(fn(circuit) {
+          set.contains(circuit, a) || set.contains(circuit, b)
+        })
+      let other_circuits =
+        circuits
+        |> list.filter(fn(circuit) {
+          !set.contains(circuit, a) && !set.contains(circuit, b)
+        })
+      case circuits_to_add_to {
+        // create new circuit
+        [] ->
+          update_circuits(
+            [set.from_list([a, b]), ..circuits],
+            rest,
             junction_boxes_length,
-            n + 1,
-            new_shortest_lights,
-            new_biggest_circuit,
           )
-        _ -> panic as "there should be at least one circuit"
+        [one_circuit] -> {
+          // add to existing circuit
+          let updated_circuit =
+            one_circuit
+            |> set.insert(a)
+            |> set.insert(b)
+          case set.size(updated_circuit) == junction_boxes_length {
+            True -> #([updated_circuit], option.Some(Light(a, b, dist)))
+            False ->
+              update_circuits(
+                [updated_circuit, ..other_circuits],
+                rest,
+                junction_boxes_length,
+              )
+          }
+        }
+        [one, two] -> {
+          // perform a merge
+          let updated_circuit = set.union(one, two)
+          case set.size(updated_circuit) == junction_boxes_length {
+            True -> #([updated_circuit], option.Some(Light(a, b, dist)))
+            False ->
+              update_circuits(
+                [updated_circuit, ..other_circuits],
+                rest,
+                junction_boxes_length,
+              )
+          }
+        }
+        _ -> panic as "invariant: this should not happen"
       }
+    }
+    _ -> {
+      // ran out of new lights to process, so return the current state and no final light
+      #(circuits |> list.sort(compare_circuits_size_desc), option.None)
     }
   }
 }
+/// This is not optimized at all, and only works on small datasets. 
+/// recursive and slow, does not take advantage of pagination
+// fn find_last_light_for_complete_circuit_loop(
+//   junction_boxes: List(JunctionBox),
+//   junction_boxes_length: Int,
+//   n: Int,
+//   shortest_lights: List(Light),
+//   biggest_circuit: set.Set(JunctionBox),
+// ) {
+//   let biggest_circuit_size = set.size(biggest_circuit)
+
+//   case
+//     biggest_circuit_size == junction_boxes_length,
+//     list.reverse(shortest_lights)
+//   {
+//     True, [last_shortest_light, ..] -> {
+//       echo list.reverse(shortest_lights)
+//       echo n
+//       last_shortest_light
+//     }
+//     _, _ -> {
+//       // replace with finding more shortest lights than the previous.
+//       let new_shortest_lights = find_n_shortest_lights(junction_boxes, n + 1, 0)
+//       // replace with just updating the circuits instead of calling it anew probably?
+//       // or a create_circuit function that short circuits when we find a minimum graph
+//       // this means that we have to do merging of sets....
+//       let new_circuits = create_circuits(new_shortest_lights)
+//       case new_circuits {
+//         [new_biggest_circuit, ..] ->
+//           find_last_light_for_complete_circuit_loop(
+//             junction_boxes,
+//             junction_boxes_length,
+//             n + 1,
+//             new_shortest_lights,
+//             new_biggest_circuit,
+//           )
+//         _ -> panic as "there should be at least one circuit"
+//       }
+//     }
+//   }
+// }
