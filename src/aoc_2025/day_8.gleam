@@ -75,6 +75,9 @@ fn distance(a: JunctionBox, b: JunctionBox) {
 // -- //
 
 // Finding n-Shortest Lights //
+// Instead of pagination, this could be made better with a cursor 
+// cursor = the longest distance from the previous page
+// then we can just filter for n entries that are longer than the cursor!
 
 fn find_n_shortest_lights(boxes: List(JunctionBox), n: Int, page: Int) {
   find_n_shortest_lights_loop(boxes, n, page, [])
@@ -236,7 +239,8 @@ pub fn pt_2(input: String) {
     get_final_light_for_complete_circuit(
       junction_boxes,
       junction_boxes_length,
-      1000,
+      // * 9 was found empirically by counting the num iterations until solution
+      1000 * 9,
       0,
       [],
     )
