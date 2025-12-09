@@ -1,5 +1,4 @@
 import gleam/dict
-import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option
@@ -51,25 +50,20 @@ fn parse_to_junction_box(coords: List(Int)) {
 }
 
 type Light {
-  Light(a: JunctionBox, b: JunctionBox, distance: Float)
+  Light(a: JunctionBox, b: JunctionBox, distance_squared: Int)
 }
 
 fn light_compare(a: Light, b: Light) {
-  float.compare(a.distance, b.distance)
+  int.compare(a.distance_squared, b.distance_squared)
 }
 
-fn distance(a: JunctionBox, b: JunctionBox) {
-  let assert Ok(f) =
-    float.square_root(int.to_float(
-      { a.x - b.x }
-      * { a.x - b.x }
-      + { a.y - b.y }
-      * { a.y - b.y }
-      + { a.z - b.z }
-      * { a.z - b.z },
-    ))
-    as "this will be a valid sqrt"
-  f
+fn distance_squared(a: JunctionBox, b: JunctionBox) {
+  { a.x - b.x }
+  * { a.x - b.x }
+  + { a.y - b.y }
+  * { a.y - b.y }
+  + { a.z - b.z }
+  * { a.z - b.z }
 }
 
 // -- //
@@ -114,7 +108,7 @@ fn recalc_shortest_lights(
     [] -> lights
     _ ->
       others
-      |> list.map(fn(b) { Light(a, b, distance(a, b)) })
+      |> list.map(fn(b) { Light(a, b, distance_squared(a, b)) })
       |> list.append(lights, _)
       |> list.sort(light_compare)
       |> list.take(n)
