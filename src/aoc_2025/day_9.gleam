@@ -1,8 +1,6 @@
-import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option
-import gleam/result
 import gleam/string
 
 pub fn pt_1(input: String) {
@@ -61,24 +59,41 @@ pub fn pt_2(input: String) {
       panic as "malformed input: must have at least two points to have a solution"
   }
   let border = list.window_by_2(list.append(red_tiles, [first_red_tile]))
+  let border_lines = shape_to_border_lines(border)
+  let invalid_border_lines =
+    generate_invalid_border_lines(red_tiles, border_lines)
   // The composition of these rectangles encompasses the border AND the inside of the input
-  // TODO... this does take into account concave.... shapes.... ugh......
+  echo "invalid border lines:"
+  invalid_border_lines
+  |> list.each(fn(line) { echo line })
+  echo "boo"
   let checking_rectangles =
     list.combination_pairs(red_tiles)
     |> list.map(to_rectangle)
-    // a candidate rectangle that has its four corners on the border (defined by the problem input)
-    // encompass a discrete portion of the "inside" of the input
-    // the list of all of such rectangles encompasses the whole "inside"!
+    // a rectangle that has its four corners on the border (defined by the problem input)
+    // it can encompass a discrete portion of the "inside" of the input, 
+    // or an empty portion, as in certain concave sections of the shape
     |> list.filter(rectangle_corners_lie_on_border(_, border))
+    // remove any rectangles if any of its sides is exactly an invalid border line
+    // this filters out any perfectly concave shapes 
+    // TODO this overly filters out any convex winners
+    |> list.filter(fn(rectangle) {
+      let border_lines = rect_to_border_lines(rectangle)
+      !{
+        use invalid_border_line <- list.any(invalid_border_lines)
+        use border_line <- list.any(border_lines)
+        invalid_border_line == border_line
+      }
+    })
     |> list.sort(sort_rectangle_area_desc)
-    // the list has duplicates (some rectangles are duplicated), so we must coalesce for memory
+    // the list has duplicates (some rectangles are duplicated), so we coalesce for memory
     |> coalesce_checking_rectangles
 
   echo "checking rects!!:"
   checking_rectangles
   |> list.each(fn(rect) { echo rect })
   echo list.length(checking_rectangles)
-  echo "!!"
+  echo "yayyyy"
 
   let candidate_rectangles =
     list.combination_pairs(red_tiles)
@@ -90,6 +105,22 @@ pub fn pt_2(input: String) {
     20,
     checking_rectangles,
   )
+}
+
+// TODO this does not work for convex. 
+// this will fix it in the concave example, but not the convex!
+fn generate_invalid_border_lines(
+  red_tiles: List(Tile),
+  border_lines: List(Line),
+) -> List(Line) {
+  list.combination_pairs(red_tiles)
+  |> list.map(to_rectangle)
+  |> list.filter(rectangle_is_line)
+  |> list.map(rect_to_border_lines)
+  |> list.flatten()
+  |> list.filter(fn(potential_invalid) {
+    !list.any(border_lines, fn(border_line) { border_line == potential_invalid })
+  })
 }
 
 fn process_candidate_rectangles_loop(
@@ -118,36 +149,47 @@ fn get_valid_candidate(
   checking_rectangles: List(Rectangle),
 ) {
   candidates
+  // first filter just checks borders. This is quick and easy and gets most out of the way.
   |> fn(candidates) {
-    echo "before first filter: "
-    echo list.length(candidates)
+    candidates |> list.map(fn(candidate) { echo candidate })
     candidates
   }
-  // first filter just checks borders. This is quick and easy and gets most out of the way.
   |> list.filter(fn(candidate) {
-    echo "processing candidate: "
-    echo candidate
-
-    rect_to_border_sides(candidate)
+    rect_to_border_lines(candidate)
     |> remove_overlapping_sides(checking_rectangles)
     |> list.is_empty()
   })
   |> fn(candidates) {
-    echo "before second filter: "
-    echo list.length(candidates)
-    candidates
+    case list.length(candidates) > 1 {
+      True -> {
+        echo "candidates that passed first filter"
+        list.each(candidates, fn(candidate) { echo candidate })
+        candidates
+      }
+      False -> candidates
+    }
   }
-  // now check the candidate's full shape
+  // now check the candidate's full shape.
   // just take progressively smaller and smaller inner rects until youve checked the whole thing
-  // TODO is this really necessary? Maybe our algorithm was wrong in a different place.
+  // TODO is this really necessary? Maybe our algorithm is wrong in a different place.
   |> list.filter(fn(candidate) {
     fully_vet_candidate(candidate, checking_rectangles)
   })
   |> fn(candidates) {
-    echo "before third filter: "
-    echo list.length(candidates)
-    candidates
+    case list.length(candidates) > 1 {
+      True -> {
+        echo "candidates that passed second filter"
+        list.each(candidates, fn(candidate) { echo candidate })
+        candidates
+      }
+      False -> candidates
+    }
   }
+  // |> fn(candidates) {
+  //   echo "before third filter: "
+  //   echo list.length(candidates)
+  //   candidates
+  // }
   // |> list.filter(fn(candidate) {
   //   case
   //     list.fold_until(
@@ -169,16 +211,11 @@ fn get_valid_candidate(
   //   }
   // })
   // one last sanity check... that might be unnecessary. This can have a tendency to OOM if done too many times.
-  |> list.filter(fn(candidate) {
-    to_full_sides(candidate)
-    |> remove_overlapping_sides(checking_rectangles)
-    |> list.is_empty()
-  })
-  |> fn(candidates) {
-    echo "before completing iteration"
-    echo list.length(candidates)
-    candidates
-  }
+  // |> list.filter(fn(candidate) {
+  //   to_full_sides(candidate)
+  //   |> remove_overlapping_sides(checking_rectangles)
+  //   |> list.is_empty()
+  // })
   |> list.take(1)
   |> fn(maybe_candidate) {
     case maybe_candidate {
@@ -206,32 +243,9 @@ fn to_four_corners(rect: Rectangle) {
   ]
 }
 
-type Line {
-  // y stays constant
-  HorizontalLine(x_low: Int, x_high: Int, y: Int)
-  // x stays constant
-  VerticalLine(x: Int, y_low: Int, y_high: Int)
-}
-
 fn sort_rectangle_area_desc(rect_a: Rectangle, rect_b: Rectangle) {
   int.compare(rect_b.area, rect_a.area)
 }
-
-// fn rectangle_border_lies_inside_rectangle(
-//   maybe_inside: Rectangle,
-//   rect: Rectangle,
-// ) {
-//   to_border_tiles(maybe_inside)
-//   |> list.all(tile_lies_inside_rectangle(_, rect))
-// }
-
-// fn rectangle_corners_lies_inside_rectangle(
-//   maybe_inside: Rectangle,
-//   rect: Rectangle,
-// ) {
-//   to_four_corners(maybe_inside)
-//   |> list.all(tile_lies_inside_rectangle(_, rect))
-// }
 
 fn tile_lies_inside_rectangle(tile: Tile, rect: Rectangle) {
   let #(a, b) = rect.opposite_corners
@@ -241,19 +255,62 @@ fn tile_lies_inside_rectangle(tile: Tile, rect: Rectangle) {
   && tile.y >= int.min(a.y, b.y)
 }
 
-// fn to_border_tiles(rect: Rectangle) {
-//   let #(corner_a, corner_b) = rect.opposite_corners
-//   let x_range = list.range(corner_a.x, corner_b.x)
-//   let y_range = list.range(corner_a.y, corner_b.y)
-//   [
-//     list.map(y_range, fn(y) { Tile(corner_a.x, y) }),
-//     list.map(y_range, fn(y) { Tile(corner_b.x, y) }),
-//     list.map(x_range, fn(x) { Tile(x, corner_a.y) }),
-//     list.map(x_range, fn(x) { Tile(x, corner_b.y) }),
-//   ]
-//   |> list.flatten
-// }
+type Line {
+  // y stays constant
+  HorizontalLine(x_low: Int, x_high: Int, y: Int)
+  // x stays constant
+  VerticalLine(x: Int, y_low: Int, y_high: Int)
+}
 
+fn rectangle_is_line(rect: Rectangle) {
+  let #(corner_a, corner_b) = rect.opposite_corners
+  corner_a.x == corner_b.x || corner_a.y == corner_b.y
+}
+
+fn rect_to_border_lines(rect: Rectangle) {
+  let #(corner_a, corner_b) = rect.opposite_corners
+  let min_x = int.min(corner_a.x, corner_b.x)
+  let max_x = int.max(corner_a.x, corner_b.x)
+  let min_y = int.min(corner_a.y, corner_b.y)
+  let max_y = int.max(corner_a.y, corner_b.y)
+  to_border_lines(min_x, max_x, min_y, max_y)
+}
+
+fn to_border_lines(min_x: Int, max_x: Int, min_y: Int, max_y: Int) {
+  case min_x == max_x, min_y == max_y {
+    False, False -> [
+      // left
+      VerticalLine(min_x, min_y, max_y),
+      // top
+      HorizontalLine(min_x, max_x, max_y),
+      // right
+      VerticalLine(max_x, min_y, max_y),
+      // bottom
+      HorizontalLine(min_x, max_x, min_y),
+    ]
+    True, False -> [VerticalLine(min_x, min_y, max_y)]
+    False, True -> [HorizontalLine(min_x, max_x, min_y)]
+    // A point 
+    True, True -> [HorizontalLine(min_x, min_x, min_y)]
+  }
+}
+
+fn shape_to_border_lines(shape: List(#(Tile, Tile))) {
+  shape
+  |> list.map(fn(segment) {
+    let #(a, b) = segment
+    case a.x == b.x, a.y == b.y {
+      True, False -> VerticalLine(a.x, int.min(a.y, b.y), int.max(a.y, b.y))
+      False, True -> HorizontalLine(int.min(a.x, b.x), int.max(a.x, b.x), a.y)
+      True, True ->
+        panic as "invariant violated: two lines exist with x and y equal"
+      False, False ->
+        panic as "invariant violated: two lines exist with x and y both unequal"
+    }
+  })
+}
+
+// This function and related ops usually OOM's
 // fn to_tiles(rect: Rectangle) {
 //   let #(corner_a, corner_b) = rect.opposite_corners
 //   echo rect.opposite_corners
@@ -279,28 +336,6 @@ fn coalesce_checking_rectangles(rects: List(Rectangle)) {
       False -> [rect, ..minimal_list_rects]
     }
   })
-}
-
-fn rect_to_border_sides(rect: Rectangle) {
-  let #(corner_a, corner_b) = rect.opposite_corners
-  let min_x = int.min(corner_a.x, corner_b.x)
-  let max_x = int.max(corner_a.x, corner_b.x)
-  let min_y = int.min(corner_a.y, corner_b.y)
-  let max_y = int.max(corner_a.y, corner_b.y)
-  to_border_sides(min_x, max_x, min_y, max_y)
-}
-
-fn to_border_sides(min_x: Int, max_x: Int, min_y: Int, max_y: Int) {
-  [
-    // left
-    VerticalLine(min_x, min_y, max_y),
-    // top
-    HorizontalLine(min_x, max_x, max_y),
-    // right
-    VerticalLine(max_x, min_y, max_y),
-    // bottom
-    HorizontalLine(min_x, max_x, min_y),
-  ]
 }
 
 /// fully vetting candidate via checking smaller and smaller rectangles (as represented by List(Side))
@@ -336,7 +371,7 @@ fn get_sides_n_sizes_smaller(rect: Rectangle, n) {
   let min_y = int.min(corner_a.y, corner_b.y) + n
   let max_y = int.max(corner_a.y, corner_b.y) - n
   case min_x > max_x || min_y > max_y {
-    False -> to_border_sides(min_x, max_x, min_y, max_y)
+    False -> to_border_lines(min_x, max_x, min_y, max_y)
     True -> []
   }
 }
@@ -344,22 +379,22 @@ fn get_sides_n_sizes_smaller(rect: Rectangle, n) {
 // -- //
 
 /// Express a rectangle completely as a list of lines
-fn to_full_sides(rect: Rectangle) {
-  let #(corner_a, corner_b) = rect.opposite_corners
-  let min_x = int.min(corner_a.x, corner_b.x)
-  let max_x = int.max(corner_a.x, corner_b.x)
-  let min_y = int.min(corner_a.y, corner_b.y)
-  let max_y = int.max(corner_a.y, corner_b.y)
+// fn to_full_lines(rect: Rectangle) {
+//   let #(corner_a, corner_b) = rect.opposite_corners
+//   let min_x = int.min(corner_a.x, corner_b.x)
+//   let max_x = int.max(corner_a.x, corner_b.x)
+//   let min_y = int.min(corner_a.y, corner_b.y)
+//   let max_y = int.max(corner_a.y, corner_b.y)
 
-  case max_x - min_x > max_y - min_y {
-    True ->
-      list.range(min_y, max_y)
-      |> list.map(fn(y) { HorizontalLine(min_x, max_x, y) })
-    False ->
-      list.range(min_x, max_x)
-      |> list.map(fn(x) { VerticalLine(x, min_y, max_y) })
-  }
-}
+//   case max_x - min_x > max_y - min_y {
+//     True ->
+//       list.range(min_y, max_y)
+//       |> list.map(fn(y) { HorizontalLine(min_x, max_x, y) })
+//     False ->
+//       list.range(min_x, max_x)
+//       |> list.map(fn(x) { VerticalLine(x, min_y, max_y) })
+//   }
+// }
 
 fn remove_overlapping_sides(sides: List(Line), checking_rects: List(Rectangle)) {
   list.fold_until(checking_rects, sides, fn(sides_accum, checking_rect) {
@@ -437,7 +472,7 @@ fn remove_overlapping_sides(sides: List(Line), checking_rects: List(Rectangle)) 
   })
 }
 
-// Consider these cases
+// Consider these cases for your algorithm!
 // __________________
 // |                 |
 // |         ________|
@@ -486,15 +521,14 @@ fn remove_overlapping_sides(sides: List(Line), checking_rects: List(Rectangle)) 
 // |________________|
 
 // We have already generated the complete list of opposite-cornered red-tiles
-// With this, we can figure out the input as a composition of these special rectangles
-//  and then use them to find the desired maximal rectangle.
+// With this, we can filter the list somehow to figure out the inputted shape as 
+// a composition of these rectangles.
+// Then, we can use them to find the desired maximal rectangle.
 
-// The inner area of the input can be described as a ** composition ** of rectangles
-// How do we determine those rectangles? (Duplicates are fine)
-// For a given rectangle with two opposite-cornered red-tiles, we can say that
-// this rectangle fully encompasses a part of the shape from border to border 
-// if its other two corners lie on the path drawn by the input.
-// TODO THIS IS WRONG FOR CONVEX SHAPES
+/// We can say that every rectangle that fully encompasses some part of the input 
+/// shape from border to border has its four corners on the path drawn by the input.
+/// This function is used to filter for such rectangles as a first step
+/// towards coming up with the correct composition of the shape.
 fn rectangle_corners_lie_on_border(
   rect: Rectangle,
   red_tile_borders: List(#(Tile, Tile)),
