@@ -107,7 +107,7 @@ pub fn pt_2(input: String) {
   )
 }
 
-// TODO this does not work for convex. 
+// TODO this does not work for convex...
 // this will fix it in the concave example, but not the convex!
 fn generate_invalid_border_lines(
   red_tiles: List(Tile),
@@ -121,7 +121,67 @@ fn generate_invalid_border_lines(
   |> list.filter(fn(potential_invalid) {
     !list.any(border_lines, fn(border_line) { border_line == potential_invalid })
   })
+  // remove any segments of valid borders from the potential invalid ones
+  // |> list.map(fn(potential_invalid) {
+  //   list.fold(border_lines, [potential_invalid], fn(accum, border_line) {
+  //     list.flatten(list.map(accum, remove_overlap(_, border_line)))
+  //   })
+  // })
+  // |> list.flatten()
+  // |> list.unique()
 }
+
+// Use this function only for border calculations!!
+// fn remove_overlap(a: Line, remove: Line) {
+//   case a, remove {
+//     HorizontalLine(a_low_x, a_high_x, a_y),
+//       HorizontalLine(rm_low_x, rm_high_x, rm_y)
+//     -> {
+//       case a_y != rm_y || a_low_x > rm_high_x || a_high_x < rm_low_x {
+//         True -> [a]
+//         False -> {
+//           let low_left_over = a_low_x < rm_low_x
+//           let high_left_over = a_high_x > rm_high_x
+//           case low_left_over, high_left_over {
+//             True, True -> [
+//               // we include rm_low_x and rm_high_x directly (instead of -1, +1)
+//               // because it makes the math work for borders -- those points
+//               // are included in the creation of the rect composition of the shape
+//               HorizontalLine(a_low_x, rm_low_x, a_y),
+//               HorizontalLine(rm_high_x, a_high_x, a_y),
+//             ]
+//             True, False -> [HorizontalLine(a_low_x, rm_low_x, a_y)]
+//             False, True -> [HorizontalLine(a_high_x, a_high_x, a_y)]
+//             False, False -> []
+//           }
+//         }
+//       }
+//     }
+//     VerticalLine(a_x, a_low_y, a_high_y),
+//       VerticalLine(rm_x, rm_low_y, rm_high_y)
+//     -> {
+//       case a_x != rm_x || a_low_y > rm_high_y || a_high_y < rm_low_y {
+//         True -> [a]
+//         False -> {
+//           let low_left_over = a_low_y < rm_low_y
+//           let high_left_over = a_high_y > rm_high_y
+//           case low_left_over, high_left_over {
+//             True, True -> [
+//               // we include rm_low_y and rm_high_y directly (instead of -1, +1)
+//               // because ... idk
+//               VerticalLine(a_x, a_low_y, rm_low_y),
+//               VerticalLine(a_x, rm_high_y, a_high_y),
+//             ]
+//             True, False -> [VerticalLine(a_x, a_low_y, rm_low_y)]
+//             False, True -> [VerticalLine(a_x, rm_high_y, a_high_y)]
+//             False, False -> []
+//           }
+//         }
+//       }
+//     }
+//     _, _ -> [a]
+//   }
+// }
 
 fn process_candidate_rectangles_loop(
   candidates: List(Rectangle),
@@ -422,6 +482,8 @@ fn remove_overlapping_sides(sides: List(Line), checking_rects: List(Rectangle)) 
             {
               True, _, _ -> [side]
               // spawn any extra horizontal lines as necessary
+              // With checking rects, we have to -1 +1 where appropriate because
+              // the border of the checking rect are all valid points.
               False, True, True -> [
                 HorizontalLine(x_low, min_x - 1, y),
                 HorizontalLine(max_x + 1, x_high, y),
