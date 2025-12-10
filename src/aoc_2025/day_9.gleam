@@ -122,19 +122,9 @@ fn get_valid_candidate(
     echo "processing rectangle: "
     echo rectangle
 
-    // is there a better format for this?
-    to_border_tiles(rectangle)
-    |> fn(tiles) {
-      echo list.length(tiles)
-      tiles
-    }
-    |> list.map(fn(border_tile) {
-      list.any(checking_rectangles, fn(rectangle) {
-        tile_lies_inside_rectangle(border_tile, rectangle)
-      })
-    })
-    |> list.reduce(bool.and)
-    |> result.unwrap(False)
+    to_sides(rectangle)
+    |> remove_overlapping_sides(checking_rectangles)
+    |> list.is_empty()
   })
   |> result.map(fn(candidate) { candidate.area })
 }
@@ -151,10 +141,17 @@ fn to_four_corners(rect: Rectangle) {
   let #(corner_a, corner_b) = rect.opposite_corners
   [
     corner_a,
-    corner_b,
     Tile(corner_a.x, corner_b.y),
+    corner_b,
     Tile(corner_b.x, corner_a.y),
   ]
+}
+
+type Line {
+  // y stays constant
+  HorizontalLine(x_low: Int, x_high: Int, y: Int)
+  // x stays constant
+  VerticalLine(x: Int, y_low: Int, y_high: Int)
 }
 
 fn sort_rectangle_area_desc(rect_a: Rectangle, rect_b: Rectangle) {
@@ -185,27 +182,18 @@ fn tile_lies_inside_rectangle(tile: Tile, rect: Rectangle) {
   && tile.y >= int.min(a.y, b.y)
 }
 
-fn to_border_tiles(rect: Rectangle) {
-  let #(corner_a, corner_b) = rect.opposite_corners
-  let x_range = list.range(corner_a.x, corner_b.x)
-  let y_range = list.range(corner_a.y, corner_b.y)
-  [
-    list.map(y_range, fn(y) { Tile(corner_a.x, y) }),
-    list.map(y_range, fn(y) { Tile(corner_b.x, y) }),
-    list.map(x_range, fn(x) { Tile(x, corner_a.y) }),
-    list.map(x_range, fn(x) { Tile(x, corner_b.y) }),
-  ]
-  |> list.flatten
-}
-
-fn rectangle_is_line(rect: Rectangle) {
-  let #(a, b) = rect.opposite_corners
-  a.x == b.x || a.y == b.y
-}
-
-fn rectangle_is_not_line(rect: Rectangle) {
-  !rectangle_is_line(rect)
-}
+// fn to_border_tiles(rect: Rectangle) {
+//   let #(corner_a, corner_b) = rect.opposite_corners
+//   let x_range = list.range(corner_a.x, corner_b.x)
+//   let y_range = list.range(corner_a.y, corner_b.y)
+//   [
+//     list.map(y_range, fn(y) { Tile(corner_a.x, y) }),
+//     list.map(y_range, fn(y) { Tile(corner_b.x, y) }),
+//     list.map(x_range, fn(x) { Tile(x, corner_a.y) }),
+//     list.map(x_range, fn(x) { Tile(x, corner_b.y) }),
+//   ]
+//   |> list.flatten
+// }
 
 fn coalesce_checking_rectangles(rects: List(Rectangle)) {
   list.fold(rects, [], fn(minimal_list_rects, rect) {
@@ -222,6 +210,91 @@ fn coalesce_checking_rectangles(rects: List(Rectangle)) {
       False -> [rect, ..minimal_list_rects]
     }
   })
+}
+
+fn to_sides(rect: Rectangle) {
+  let #(corner_a, corner_b) = rect.opposite_corners
+  let min_x = int.min(corner_a.x, corner_b.x)
+  let max_x = int.max(corner_a.x, corner_b.x)
+  let min_y = int.min(corner_a.y, corner_b.y)
+  let max_y = int.max(corner_a.y, corner_b.y)
+  [
+    // left
+    VerticalLine(min_x, min_y, max_y),
+    // top
+    HorizontalLine(min_x, max_x, max_y),
+    // right
+    VerticalLine(max_x, min_y, max_y),
+    // bottom
+    HorizontalLine(min_x, max_x, min_y),
+  ]
+}
+
+fn remove_overlapping_sides(sides: List(Line), checking_rects: List(Rectangle)) {
+  use sides_accum, checking_rect <- list.fold_until(checking_rects, sides)
+  let #(corner_a, corner_b) = checking_rect.opposite_corners
+  let min_x = int.min(corner_a.x, corner_b.x)
+  let max_x = int.max(corner_a.x, corner_b.x)
+  let min_y = int.min(corner_a.y, corner_b.y)
+  let max_y = int.max(corner_a.y, corner_b.y)
+
+  let updated_sides =
+    sides_accum
+    |> list.map(fn(side) {
+      case side {
+        HorizontalLine(x_low, x_high, y) -> {
+          let outside_y_range = y < min_y || max_y < y
+          let outside_x_range = x_low > max_x || x_high < min_x
+          let outside_range = outside_y_range || outside_x_range
+
+          let there_is_excess_lower_x = x_low < min_x
+          let there_is_excess_upper_x = x_high > max_x
+          case outside_range, there_is_excess_lower_x, there_is_excess_upper_x {
+            True, _, _ -> [side]
+            // spawn any extra horizontal lines as necessary
+            False, True, True -> [
+              HorizontalLine(x_low, min_x - 1, y),
+              HorizontalLine(max_x + 1, x_high, y),
+            ]
+            False, True, False -> [
+              HorizontalLine(x_low, min_x - 1, y),
+            ]
+            False, False, True -> [
+              HorizontalLine(max_x + 1, x_high, y),
+            ]
+            False, False, False -> []
+          }
+        }
+        VerticalLine(x, y_low, y_high) -> {
+          let outside_x_range = x < min_x || max_x < x
+          let outside_y_range = y_low > max_y || y_high < min_y
+          let outside_range = outside_y_range || outside_x_range
+
+          let there_is_excess_lower_y = y_low < min_y
+          let there_is_excess_upper_y = y_high > max_y
+          case outside_range, there_is_excess_lower_y, there_is_excess_upper_y {
+            True, _, _ -> [side]
+            // spawn any extra horizontal lines as necessary
+            False, True, True -> [
+              VerticalLine(x, y_low, min_y - 1),
+              VerticalLine(x, max_y + 1, y_high),
+            ]
+            False, True, False -> [
+              VerticalLine(x, y_low, min_y - 1),
+            ]
+            False, False, True -> [
+              VerticalLine(x, max_y + 1, y_high),
+            ]
+            False, False, False -> []
+          }
+        }
+      }
+    })
+    |> list.flatten
+  case updated_sides {
+    [] -> list.Stop([])
+    _ -> list.Continue(updated_sides)
+  }
 }
 
 // Consider these cases
